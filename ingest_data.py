@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 import psycopg2
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import json
 
@@ -26,6 +26,13 @@ ENDPOINTS = {
 }
 
 HISTORY_URL_TEMPLATE = f'{API_BASE_URL}/history/{{planetIndex}}'
+
+def get_env_variable(var_name):
+    value = os.getenv(var_name)
+    if value is None:
+        logging.error(f'Environment variable {var_name} is not set.')
+        raise EnvironmentError(f'Environment variable {var_name} is not set.')
+    return value
 
 def fetch_json(url, params=None):
     try:
@@ -64,14 +71,22 @@ def fetch_all_data():
     return data
 
 def store_data(data):
+    conn = None  # Initialize to None
     try:
+        # Retrieve environment variables
+        db_host = get_env_variable('DB_HOST')
+        db_port = get_env_variable('DB_PORT')
+        db_name = get_env_variable('DB_NAME')
+        db_user = get_env_variable('DB_USER')
+        db_password = get_env_variable('DB_PASSWORD')
+
         # Connect to PostgreSQL
         conn = psycopg2.connect(
-            host=os.getenv('DB_HOST'),
-            port=os.getenv('DB_PORT'),
-            database=os.getenv('DB_NAME'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD')
+            host=db_host,
+            port=db_port,
+            database=db_name,
+            user=db_user,
+            password=db_password
         )
         cursor = conn.cursor()
         
@@ -170,7 +185,7 @@ def store_data(data):
         if 'status' in data and data['status']:
             planet_status = data['status'].get('planetStatus', [])
             warId = data['status'].get('warId')
-            time = data['status'].get('time')
+            time_val = data['status'].get('time')
             impactMultiplier = data['status'].get('impactMultiplier')
             storyBeatId32 = data['status'].get('storyBeatId32')
             
@@ -194,7 +209,7 @@ def store_data(data):
                     status.get('regenPerSecond'),
                     status.get('players'),
                     warId,
-                    time,
+                    time_val,
                     impactMultiplier,
                     storyBeatId32
                 ))
@@ -312,6 +327,7 @@ def store_data(data):
             major_orders = data['major_orders']
             for order in major_orders:
                 setting = order.get('setting', {})
+                tasks = setting.get('tasks', [])
                 cursor.execute("""
                 INSERT INTO war_major_orders (
                     id32, progress, expiresIn, setting_type, setting_overrideTitle,
@@ -340,7 +356,7 @@ def store_data(data):
                     setting.get('overrideTitle'),
                     setting.get('overrideBrief'),
                     setting.get('taskDescription'),
-                    json.dumps(setting.get('tasks')),
+                    json.dumps(tasks),
                     setting.get('reward', {}).get('type'),
                     setting.get('reward', {}).get('id32'),
                     setting.get('reward', {}).get('amount'),
@@ -397,13 +413,25 @@ def store_data(data):
         # Commit transaction
         conn.commit()
         logging.info('All data stored successfully.')
-        
-        # Close connection
-        cursor.close()
-        conn.close()
+    
+    except EnvironmentError as env_err:
+        logging.error(f'Environment Error: {env_err}')
+        raise  # Re-raise to mark the GitHub Action as failed
+    
+    except psycopg2.OperationalError as op_err:
+        logging.error(f'Database Connection Error: {op_err}')
+        raise  # Re-raise to mark the GitHub Action as failed
+    
     except Exception as e:
-        conn.rollback()
         logging.error(f'Error storing data: {e}')
+        if conn:
+            conn.rollback()
+        raise  # Re-raise the exception after logging and rollback
+    
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
 def main():
     logging.info('Pipeline started.')
