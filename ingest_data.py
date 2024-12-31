@@ -279,15 +279,7 @@ def store_data(data):
         if 'campaign' in data and data['campaign']:
             campaigns = data['campaign']
             for campaign in campaigns:
-                biome = campaign.get('biome', {})
-                
-                # Convert UNIX timestamp to datetime object
-                expire_timestamp = campaign.get('expireDateTime')
-                if expire_timestamp:
-                    expire_datetime = datetime.fromtimestamp(expire_timestamp, tz=timezone.utc)
-                else:
-                    expire_datetime = None  # Handle cases where expireDateTime might be null
-                
+                biome = campaign.get('biome') or {}
                 cursor.execute("""
                 INSERT INTO war_campaign (
                     planetIndex, name, faction, players, health, maxHealth,
@@ -317,9 +309,9 @@ def store_data(data):
                     campaign.get('percentage'),
                     campaign.get('defense'),
                     campaign.get('majorOrder'),
-                    biome.get('slug'),
-                    biome.get('description'),
-                    expire_datetime  # Use the converted datetime object
+                    biome.get('slug') if biome else None,
+                    biome.get('description') if biome else None,
+                    expire_datetime
                 ))
             logging.info('Stored war_campaign data successfully.')
         
