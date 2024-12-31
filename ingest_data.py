@@ -4,6 +4,7 @@ import psycopg2
 import logging
 from datetime import datetime
 import os
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -38,15 +39,15 @@ def fetch_json(url, params=None):
 
 def fetch_all_data():
     data = {}
-
+    
     # Fetch static endpoints
     for key, url in ENDPOINTS.items():
         data[key] = fetch_json(url)
-
+    
     # Fetch planets data
     planets_data = fetch_json(PLANETS_URL)
     data['planets'] = planets_data
-
+    
     # Fetch history for each planet (optional, can be time-consuming)
     # Uncomment the following lines if you want to include history data
     """
@@ -59,7 +60,7 @@ def fetch_all_data():
                 history_data[planet_index] = history
     data['history'] = history_data
     """
-
+    
     return data
 
 def store_data(data):
@@ -73,11 +74,14 @@ def store_data(data):
             password=os.getenv('DB_PASSWORD')
         )
         cursor = conn.cursor()
-
-        # Create tables if they don't exist
+        
+        # Start transaction
+        conn.autocommit = False
+        
+        # Create tables with PRIMARY KEY constraints
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS war_status (
-            planetIndex INTEGER,
+            planetIndex INTEGER PRIMARY KEY,
             owner INTEGER,
             health INTEGER,
             regenPerSecond FLOAT,
@@ -88,10 +92,10 @@ def store_data(data):
             storyBeatId32 INTEGER
         );
         """)
-
+        
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS war_info (
-            planetIndex INTEGER,
+            planetIndex INTEGER PRIMARY KEY,
             settingsHash INTEGER,
             position_x FLOAT,
             position_y FLOAT,
@@ -106,7 +110,7 @@ def store_data(data):
             minimumClientVersion VARCHAR
         );
         """)
-
+        
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS war_news (
             id INTEGER PRIMARY KEY,
@@ -116,7 +120,7 @@ def store_data(data):
             message TEXT
         );
         """)
-
+        
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS war_campaign (
             planetIndex INTEGER PRIMARY KEY,
@@ -133,7 +137,7 @@ def store_data(data):
             expireDateTime TIMESTAMP
         );
         """)
-
+        
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS war_major_orders (
             id32 INTEGER PRIMARY KEY,
@@ -150,7 +154,7 @@ def store_data(data):
             setting_flags INTEGER
         );
         """)
-
+        
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS planets (
             planetIndex INTEGER PRIMARY KEY,
@@ -161,7 +165,7 @@ def store_data(data):
             environmentals JSONB
         );
         """)
-
+        
         # Insert or replace data into tables
         if 'status' in data and data['status']:
             planet_status = data['status'].get('planetStatus', [])
@@ -169,7 +173,7 @@ def store_data(data):
             time = data['status'].get('time')
             impactMultiplier = data['status'].get('impactMultiplier')
             storyBeatId32 = data['status'].get('storyBeatId32')
-
+            
             for status in planet_status:
                 cursor.execute("""
                 INSERT INTO war_status (planetIndex, owner, health, regenPerSecond, players, warId, time, impactMultiplier, storyBeatId32)
@@ -194,16 +198,16 @@ def store_data(data):
                     impactMultiplier,
                     storyBeatId32
                 ))
-
+            
             logging.info('Stored war_status data successfully.')
-
+        
         if 'info' in data and data['info']:
             planet_infos = data['info'].get('planetInfos', [])
             warId = data['info'].get('warId')
             startDate = data['info'].get('startDate')
             endDate = data['info'].get('endDate')
             minimumClientVersion = data['info'].get('minimumClientVersion')
-
+            
             for info in planet_infos:
                 position = info.get('position', {})
                 waypoints = info.get('waypoints', [])
@@ -238,9 +242,9 @@ def store_data(data):
                     endDate,
                     minimumClientVersion
                 ))
-
+            
             logging.info('Stored war_info data successfully.')
-
+        
         if 'news' in data and data['news']:
             news_items = data['news']
             for news in news_items:
@@ -256,7 +260,7 @@ def store_data(data):
                     news.get('message')
                 ))
             logging.info('Stored war_news data successfully.')
-
+        
         if 'campaign' in data and data['campaign']:
             campaigns = data['campaign']
             for campaign in campaigns:
@@ -291,7 +295,7 @@ def store_data(data):
                     campaign.get('expireDateTime')
                 ))
             logging.info('Stored war_campaign data successfully.')
-
+        
         if 'major_orders' in data and data['major_orders']:
             major_orders = data['major_orders']
             for order in major_orders:
@@ -331,7 +335,7 @@ def store_data(data):
                     setting.get('flags')
                 ))
             logging.info('Stored war_major_orders data successfully.')
-
+        
         if 'planets' in data and data['planets']:
             planets = data['planets']
             for planet_index, planet in planets.items():
@@ -355,20 +359,20 @@ def store_data(data):
                     json.dumps(environmentals)
                 ))
             logging.info('Stored planets data successfully.')
-
+        
         # If you included history data, handle it here
         """
         if 'history' in data and data['history']:
             for planet_index, history in data['history'].items():
                 for record in history:
-                    cursor.execute(f\"""
+                    cursor.execute(f"""
                     INSERT INTO history_{planet_index} (created_at, planet_index, current_health, max_health, player_count)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (created_at) DO UPDATE
                     SET current_health = EXCLUDED.current_health,
                         max_health = EXCLUDED.max_health,
                         player_count = EXCLUDED.player_count;
-                    \""", (
+                    """, (
                         record.get('created_at'),
                         record.get('planet_index'),
                         record.get('current_health'),
@@ -377,13 +381,16 @@ def store_data(data):
                     ))
                 logging.info(f'Stored history data for planet {planet_index} successfully.')
         """
-
-        # Commit and close connection
+        
+        # Commit transaction
         conn.commit()
+        logging.info('All data stored successfully.')
+        
+        # Close connection
         cursor.close()
         conn.close()
-        logging.info('All data stored successfully.')
     except Exception as e:
+        conn.rollback()
         logging.error(f'Error storing data: {e}')
 
 def main():
