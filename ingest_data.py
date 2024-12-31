@@ -365,14 +365,14 @@ def store_data(data):
         if 'history' in data and data['history']:
             for planet_index, history in data['history'].items():
                 for record in history:
-                    cursor.execute(f"""
+                    cursor.execute(f\"""
                     INSERT INTO history_{planet_index} (created_at, planet_index, current_health, max_health, player_count)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (created_at) DO UPDATE
                     SET current_health = EXCLUDED.current_health,
                         max_health = EXCLUDED.max_health,
                         player_count = EXCLUDED.player_count;
-                    """, (
+                    \""", (
                         record.get('created_at'),
                         record.get('planet_index'),
                         record.get('current_health'),
