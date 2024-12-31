@@ -280,6 +280,21 @@ def store_data(data):
             campaigns = data['campaign']
             for campaign in campaigns:
                 biome = campaign.get('biome') or {}
+                
+                if not biome:
+                    logging.warning(f"Biome data is missing for planetIndex: {campaign.get('planetIndex')}")
+                else:
+                    logging.info(f"Biome data found for planetIndex: {campaign.get('planetIndex')}")
+                
+                # Convert UNIX timestamp to datetime object
+                expire_timestamp = campaign.get('expireDateTime')
+                if expire_timestamp:
+                    expire_datetime = datetime.fromtimestamp(expire_timestamp, tz=timezone.utc)
+                    logging.info(f"Converted expireDateTime for planetIndex {campaign.get('planetIndex')}: {expire_datetime}")
+                else:
+                    expire_datetime = None  # Handle cases where expireDateTime might be null
+                    logging.warning(f"expireDateTime is missing for planetIndex: {campaign.get('planetIndex')}")
+                
                 cursor.execute("""
                 INSERT INTO war_campaign (
                     planetIndex, name, faction, players, health, maxHealth,
@@ -359,7 +374,7 @@ def store_data(data):
         if 'planets' in data and data['planets']:
             planets = data['planets']
             for planet_index, planet in planets.items():
-                biome = planet.get('biome', {})
+                biome = planet.get('biome') or {}
                 environmentals = planet.get('environmentals', [])
                 cursor.execute("""
                 INSERT INTO planets (planetIndex, name, sector, biome_slug, biome_description, environmentals)
@@ -374,8 +389,8 @@ def store_data(data):
                     int(planet_index),
                     planet.get('name'),
                     planet.get('sector'),
-                    biome.get('slug'),
-                    biome.get('description'),
+                    biome.get('slug') if biome else None,
+                    biome.get('description') if biome else None,
                     json.dumps(environmentals)
                 ))
             logging.info('Stored planets data successfully.')
