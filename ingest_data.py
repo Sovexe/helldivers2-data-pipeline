@@ -104,7 +104,7 @@ def store_data(data):
             warId INTEGER,
             time INTEGER,
             impactMultiplier FLOAT,
-            storyBeatId32 INTEGER
+            storyBeatId32 BIGINT
         );
         """)
         
@@ -155,7 +155,7 @@ def store_data(data):
         
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS war_major_orders (
-            id32 INTEGER PRIMARY KEY,
+            id32 BIGINT PRIMARY KEY,
             progress INTEGER[],
             expiresIn INTEGER,
             setting_type INTEGER,
@@ -164,7 +164,7 @@ def store_data(data):
             setting_taskDescription TEXT,
             setting_tasks JSONB,
             setting_reward_type INTEGER,
-            setting_reward_id32 INTEGER,
+            setting_reward_id32 BIGINT,
             setting_reward_amount INTEGER,
             setting_flags INTEGER
         );
